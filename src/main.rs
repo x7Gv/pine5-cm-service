@@ -3,13 +3,17 @@ use cm::cm_token_server::{CmToken, CmTokenServer};
 use cm::message_broadcast::Operation;
 use cm::message_send_response::SendStatus;
 use cm::{
-    HealthCheckRequest, HealthCheckResponse, MessageBroadcast, MessageSendResponse, TokenBroadcast,
+    HealthCheckRequest, HealthCheckResponse, MessageBroadcast, MessageSendRequest,
+    MessageSendResponse, MessageSubscribeRequest, TokenBroadcast, TokenRegisterRequest,
+    TokenRegisterResponse, TokenSubscribeRequest, TokenUpdateRequest, TokenUpdateResponse,
 };
+
+use tonic::{Request, Response, Status};
 
 use std::{borrow::Borrow, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{async_trait, Response, Status};
+use tonic::async_trait;
 
 pub mod cm {
     tonic::include_proto!("cm");
@@ -29,8 +33,8 @@ pub struct CmTokenService {
 impl CmMessage for CmMessageService {
     async fn message_send(
         &self,
-        request: tonic::Request<cm::MessageSendRequest>,
-    ) -> Result<tonic::Response<cm::MessageSendResponse>, tonic::Status> {
+        request: Request<MessageSendRequest>,
+    ) -> Result<Response<MessageSendResponse>, Status> {
         let message = request.into_inner().inner.unwrap();
 
         let bcast = MessageBroadcast {
@@ -46,10 +50,17 @@ impl CmMessage for CmMessageService {
 
     type MessageSubscribeStream = ReceiverStream<Result<MessageBroadcast, Status>>;
 
+    fn subscribe_filter(request: &MessageSubscribeRequest, bcast: &MessageBroadcast) -> bool {
+        if let Some(filter) = request.filter.as_ref() {
+        }
+
+        false
+    }
+
     async fn message_subscribe(
         &self,
-        request: tonic::Request<cm::MessageSubscribeRequest>,
-    ) -> Result<tonic::Response<Self::MessageSubscribeStream>, tonic::Status> {
+        request: Request<MessageSubscribeRequest>,
+    ) -> Result<Response<Self::MessageSubscribeStream>, Status> {
         let (tx, rx) = mpsc::channel(4);
 
         let mut subscribe_rx = self.subscribe_tx.subscribe();
@@ -64,8 +75,8 @@ impl CmMessage for CmMessageService {
 
     async fn check(
         &self,
-        request: tonic::Request<cm::HealthCheckRequest>,
-    ) -> Result<tonic::Response<cm::HealthCheckResponse>, tonic::Status> {
+        request: Request<HealthCheckRequest>,
+    ) -> Result<Response<HealthCheckResponse>, Status> {
         todo!()
     }
 
@@ -73,8 +84,8 @@ impl CmMessage for CmMessageService {
 
     async fn watch(
         &self,
-        request: tonic::Request<cm::HealthCheckRequest>,
-    ) -> Result<tonic::Response<Self::WatchStream>, tonic::Status> {
+        request: Request<HealthCheckRequest>,
+    ) -> Result<Response<Self::WatchStream>, Status> {
         todo!()
     }
 }
@@ -83,15 +94,15 @@ impl CmMessage for CmMessageService {
 impl CmToken for CmTokenService {
     async fn token_register(
         &self,
-        request: tonic::Request<cm::TokenRegisterRequest>,
-    ) -> Result<tonic::Response<cm::TokenRegisterResponse>, tonic::Status> {
+        request: Request<TokenRegisterRequest>,
+    ) -> Result<Response<TokenRegisterResponse>, Status> {
         todo!()
     }
 
     async fn token_update(
         &self,
-        request: tonic::Request<cm::TokenUpdateRequest>,
-    ) -> Result<tonic::Response<cm::TokenUpdateResponse>, tonic::Status> {
+        request: Request<TokenUpdateRequest>,
+    ) -> Result<Response<TokenUpdateResponse>, Status> {
         todo!()
     }
 
@@ -99,15 +110,15 @@ impl CmToken for CmTokenService {
 
     async fn token_subscribe(
         &self,
-        request: tonic::Request<cm::TokenSubscribeRequest>,
-    ) -> Result<tonic::Response<Self::TokenSubscribeStream>, tonic::Status> {
+        request: Request<TokenSubscribeRequest>,
+    ) -> Result<Response<Self::TokenSubscribeStream>, Status> {
         todo!()
     }
 
     async fn check(
         &self,
-        request: tonic::Request<cm::HealthCheckRequest>,
-    ) -> Result<tonic::Response<cm::HealthCheckResponse>, tonic::Status> {
+        request: Request<HealthCheckRequest>,
+    ) -> Result<Response<HealthCheckResponse>, Status> {
         todo!()
     }
 
@@ -115,8 +126,8 @@ impl CmToken for CmTokenService {
 
     async fn watch(
         &self,
-        request: tonic::Request<cm::HealthCheckRequest>,
-    ) -> Result<tonic::Response<Self::WatchStream>, tonic::Status> {
+        request: Request<HealthCheckRequest>,
+    ) -> Result<Response<Self::WatchStream>, Status> {
         todo!()
     }
 }
