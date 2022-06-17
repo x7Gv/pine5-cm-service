@@ -1,0 +1,150 @@
+
+syntax = "proto3";
+
+package cm;
+
+import "google/protobuf/timestamp.proto";
+
+service cm_message {
+
+    rpc MessageSend(MessageSendRequest) returns (MessageSendResponse);
+    rpc MessageSubscribe(MessageSubscribeRequest) returns (stream MessageBroadcast);
+
+    rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+    rpc Watch(HealthCheckRequest) returns (stream HealthCheckResponse);
+}
+
+service cm_token {
+
+    rpc TokenRegister(TokenRegisterRequest) returns (TokenRegisterResponse);
+    rpc TokenUpdate(TokenUpdateRequest) returns (TokenUpdateResponse);
+
+    rpc TokenSubscribe(TokenSubscribeRequest) returns (stream TokenBroadcast);
+
+    rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+    rpc Watch(HealthCheckRequest) returns (stream HealthCheckResponse);
+}
+
+message TokenUpdate {
+    Token original = 1;
+    Token delta = 2;
+}
+
+message TokenBroadcast {
+    oneof operation {
+        Token addition = 1;
+        Token invalidation = 2;
+        TokenUpdate update = 3;
+    }
+}
+
+message TokenSubscribeFilter {
+    oneof predicate {
+        TokenKeys complement = 1;
+        TokenKeys intersection = 2;
+        TokenKeys Union = 3;
+    }
+}
+
+message TokenSubscribeRequest {
+    TokenSubscribeFilter filter = 1;
+}
+
+message TokenUpdateRequest {
+    TokenKey key = 1;
+}
+
+message TokenUpdateResponse {
+    Token token = 1;
+    google.protobuf.Timestamp timestamp = 2;
+}
+
+message TokenRegisterRequest {
+    Token token = 1;
+}
+
+message TokenRegisterResponse {
+    enum Status {
+        SUCCESS = 0;
+        INVALID = 1;
+        ALREADY_PRESENT = 2;
+        UNKNOWN = 3;
+    }
+    Status status = 1;
+}
+
+message TokenKey {
+    string key = 1;
+}
+
+message TokenKeys {
+    repeated TokenKey keys = 1;
+}
+
+message Token {
+    TokenKey key = 1;
+    google.protobuf.Timestamp timestamp = 2;
+}
+
+message Tokens {
+    repeated Token tokens = 1;
+}
+
+message RegistrationTokenRegisterRequest {
+    Token token = 1;
+}
+
+message MessageBroadcast {
+    oneof operation {
+        Message send = 1;
+    }
+}
+
+message MessageSendResponse {
+    enum SendStatus {
+        SUCCESS = 0;
+        FAILURE = 1;
+    }
+    SendStatus status = 1;
+}
+
+message MessageSubscribeRequest {
+    MessageFilter filter = 1;
+}
+
+message MessageFilter {
+    string source = 1;
+}
+
+message MessageSendRequest {
+    Message inner = 1;
+}
+
+message Message {
+    Map content = 1;
+    TokenKeys codomain = 2;
+    google.protobuf.Timestamp timestamp = 3;
+}
+
+message HealthCheckRequest {
+    string service = 1;
+};
+
+message HealthCheckResponse {
+    enum ServingStatus {
+        UNKNOWN = 0;
+        SERVING = 1;
+        NOT_SERVING = 2;
+        SERVICE_UNKNOWN = 3;
+    }
+    ServingStatus status = 1;
+}
+
+message Map {
+    repeated KeyValue entries = 1;
+}
+
+message KeyValue {
+    string key = 1;
+    string value = 2;
+}

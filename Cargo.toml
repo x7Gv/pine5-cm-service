@@ -1,0 +1,24 @@
+[package]
+edition = "2021"
+name = "pine5-cm-service"
+version = "0.1.0"
+[build-dependencies]
+tonic-build = "0.7"
+
+[dependencies]
+async-stream = "0.2"
+futures = "0.3"
+hyper = "0.14"
+prost = "0.10"
+prost-types = "0.10"
+tokio-stream = "0.1"
+tonic = "0.7"
+warp = "0.3"
+
+[dependencies.tokio]
+features = ["full"]
+version = "1"
+
+[dependencies.tower]
+features = ["full"]
+version = "0.4"
