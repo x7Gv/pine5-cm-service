@@ -109,11 +109,15 @@ message MessageSendResponse {
 }
 
 message MessageSubscribeRequest {
-    MessageFilter filter = 1;
+    MessageSubscribeFilter filter = 1;
 }
 
-message MessageFilter {
-    string source = 1;
+message MessageSubscribeFilter {
+    oneof predicate {
+        TokenKeys complement = 1;
+        TokenKeys intersection = 2;
+        TokenKeys Union = 3;
+    }
 }
 
 message MessageSendRequest {
