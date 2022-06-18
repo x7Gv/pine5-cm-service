@@ -27,9 +27,9 @@ pub mod cm {
 
 #[async_trait]
 pub trait TokenDb: Send + Sync + 'static {
-    async fn insert(&self, token: String) -> Result<(), Box<dyn std::error::Error>>;
-    async fn update(&self, token: String) -> Result<(), Box<dyn std::error::Error>>;
-    async fn invalidate(&self, token: String) -> Result<(), Box<dyn std::error::Error>>;
+    async fn insert(&self, token: &model::TokenKey) -> Result<model::Token, Box<dyn std::error::Error>>;
+    async fn update(&self, token: &model::TokenKey) -> Result<model::Token, Box<dyn std::error::Error>>;
+    async fn invalidate(&self, token: &model::TokenKey) -> Result<model::Token, Box<dyn std::error::Error>>;
 }
 
 pub enum TokenDbInsertResult {
@@ -40,7 +40,7 @@ pub enum TokenDbInsertResult {
 }
 
 pub struct TokenDbInMemory {
-    db: Arc<RwLock<HashMap<String, std::time::Instant>>>,
+    db: Arc<RwLock<HashMap<model::TokenKey, model::Token>>>,
 }
 
 impl TokenDbInMemory {
