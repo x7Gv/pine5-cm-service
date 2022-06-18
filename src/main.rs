@@ -2,11 +2,12 @@ use cm::cm_message_server::{CmMessage, CmMessageServer};
 use cm::cm_token_server::{CmToken, CmTokenServer};
 use cm::message_broadcast::Operation;
 use cm::message_send_response::SendStatus;
+use cm::token_broadcast::{self};
 use cm::{
     HealthCheckRequest, HealthCheckResponse, MessageBroadcast, MessageSendRequest,
     MessageSendResponse, MessageSubscribeRequest, TokenBroadcast, TokenKey,
     TokenRegisterRequest, TokenRegisterResponse, TokenSubscribeRequest, TokenUpdateRequest,
-    TokenUpdateResponse,
+    TokenUpdateResponse, token_register_response,
 };
 
 use tonic::transport::Server;
@@ -22,11 +23,34 @@ pub mod cm {
     tonic::include_proto!("cm");
 }
 
+pub mod data {
+
+    #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+    pub struct TokenKey {
+        key: String,
+    }
+
+    #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+    pub struct Token {
+        key: TokenKey,
+        timestamp: std::time::Instant,
+    }
+
+
+}
+
 #[async_trait]
 pub trait TokenDb: Send + Sync + 'static {
     async fn insert(&self, token: String) -> Result<(), Box<dyn std::error::Error>>;
     async fn update(&self, token: String) -> Result<(), Box<dyn std::error::Error>>;
     async fn invalidate(&self, token: String) -> Result<(), Box<dyn std::error::Error>>;
+}
+
+pub enum TokenDbInsertResult {
+    Success,
+    Invalid,
+    AlreadyPresent,
+    Unknown,
 }
 
 pub struct TokenDbInMemory {
@@ -181,7 +205,16 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
         &self,
         request: Request<TokenRegisterRequest>,
     ) -> Result<Response<TokenRegisterResponse>, Status> {
-        todo!()
+        let token = request.into_inner().token.unwrap();
+
+        let bcast = TokenBroadcast {
+            operation: Some(token_broadcast::Operation::Addition(token)),
+        };
+
+        self.subscribe_tx.send(bcast).unwrap();
+        Ok(Response::new(TokenRegisterResponse {
+            status: token_register_response::Status::Success as i32
+        }))
     }
 
     async fn token_update(
