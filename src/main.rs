@@ -4,39 +4,25 @@ use cm::message_broadcast::Operation;
 use cm::message_send_response::SendStatus;
 use cm::token_broadcast::{self};
 use cm::{
-    HealthCheckRequest, HealthCheckResponse, MessageBroadcast, MessageSendRequest,
-    MessageSendResponse, MessageSubscribeRequest, TokenBroadcast, TokenKey,
+    token_register_response, HealthCheckRequest, HealthCheckResponse, MessageBroadcast,
+    MessageSendRequest, MessageSendResponse, MessageSubscribeRequest, TokenBroadcast, TokenKey,
     TokenRegisterRequest, TokenRegisterResponse, TokenSubscribeRequest, TokenUpdateRequest,
-    TokenUpdateResponse, token_register_response,
+    TokenUpdateResponse,
 };
 
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::async_trait;
-use std::collections::HashMap;
-use std::sync::Arc;
+
+pub mod model;
 
 pub mod cm {
     tonic::include_proto!("cm");
-}
-
-pub mod data {
-
-    #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-    pub struct TokenKey {
-        key: String,
-    }
-
-    #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-    pub struct Token {
-        key: TokenKey,
-        timestamp: std::time::Instant,
-    }
-
-
 }
 
 #[async_trait]
@@ -54,13 +40,13 @@ pub enum TokenDbInsertResult {
 }
 
 pub struct TokenDbInMemory {
-    db: Arc<RwLock<HashMap<String, std::time::Instant>>>
+    db: Arc<RwLock<HashMap<String, std::time::Instant>>>,
 }
 
 impl TokenDbInMemory {
     pub fn new() -> Self {
         Self {
-            db: Arc::new(RwLock::new(HashMap::new()))
+            db: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -103,12 +89,11 @@ pub struct CmMessageService {
 #[derive(Debug)]
 pub struct CmTokenService<Db: TokenDb> {
     subscribe_tx: broadcast::Sender<TokenBroadcast>,
-    db: Arc<Db>
+    db: Arc<Db>,
 }
 
 fn message_subscribe_filter(request: &MessageSubscribeRequest, key: &TokenKey) -> bool {
     if let Some(filter) = request.filter.as_ref() {
-
         if let Some(predicate) = &filter.predicate {
             match predicate {
                 cm::message_subscribe_filter::Predicate::Complement(complement) => {
@@ -213,7 +198,7 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
 
         self.subscribe_tx.send(bcast).unwrap();
         Ok(Response::new(TokenRegisterResponse {
-            status: token_register_response::Status::Success as i32
+            status: token_register_response::Status::Success as i32,
         }))
     }
 
@@ -252,7 +237,6 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-
     let addr = "[::1]:10000".parse().unwrap();
 
     println!("Service listening on: {}", addr);
