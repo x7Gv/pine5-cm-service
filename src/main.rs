@@ -29,14 +29,7 @@ pub mod cm {
 pub trait TokenDb: Send + Sync + 'static {
     async fn insert(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError>;
     async fn update(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError>;
-    async fn invalidate(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError>;
-}
-
-pub enum TokenDbInsertResult {
-    Success,
-    Invalid,
-    AlreadyPresent,
-    Unknown,
+    async fn invalidate(&self, token: &model::TokenKey) -> Result<(), TokenDbError>;
 }
 
 pub struct TokenDbInMemory {
@@ -59,16 +52,13 @@ pub enum TokenDbError {
 #[async_trait]
 impl TokenDb for TokenDbInMemory {
     async fn insert(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError> {
-        {
             let mut w0 = self.db.write().await;
             let t = model::Token::from(token.clone());
             w0.insert(token.clone(), t.clone());
             return Ok(t)
-        }
     }
 
     async fn update(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError> {
-        {
             let r0 = self.db.read().await;
             if r0.contains_key(&token) {
                 let mut w0 = self.db.write().await;
@@ -76,15 +66,13 @@ impl TokenDb for TokenDbInMemory {
                 w0.insert(token.clone(), t.clone());
                 return Ok(t)
             } else {
+                return Err(TokenDbError::TokenNotPresent(token.clone()));
             }
-        }
     }
 
-    async fn invalidate(&self, token: String) -> Result<(), Box<dyn std::error::Error>> {
-        {
-            let mut w0 = self.db.write().await;
-            w0.remove(&token);
-        }
+    async fn invalidate(&self, token: &model::TokenKey) -> Result<(), TokenDbError> {
+        let mut w0 = self.db.write().await;
+        w0.remove(&token);
         Ok(())
     }
 }
@@ -192,6 +180,26 @@ impl CmMessage for CmMessageService {
     }
 }
 
+fn token_subscribe_filter(request: &TokenSubscribeRequest, key: &TokenKey) -> bool {
+    if let Some(filter) = request.filter.as_ref() {
+        if let Some(predicate) = &filter.predicate {
+            match predicate {
+                cm::token_subscribe_filter::Predicate::Complement(complement) => {
+                    return !complement.keys.contains(&key);
+                },
+                cm::token_subscribe_filter::Predicate::Intersection(intersection) => {
+                    return intersection.keys.contains(key);
+                },
+                cm::token_subscribe_filter::Predicate::Union(union) => {
+                    return true;
+                },
+            }
+        }
+    }
+
+    false
+}
+
 #[async_trait]
 impl<Db: TokenDb> CmToken for CmTokenService<Db> {
     async fn token_register(
@@ -223,7 +231,33 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
         &self,
         request: Request<TokenSubscribeRequest>,
     ) -> Result<Response<Self::TokenSubscribeStream>, Status> {
-        todo!()
+        let (tx, rx) = mpsc::channel(4);
+
+        let mut subscribe_rx = self.subscribe_tx.subscribe();
+        tokio::spawn(async move {
+            while let Ok(update) = subscribe_rx.recv().await {
+                if let Some(operation) = &update.operation {
+
+                    let mut pass = false;
+
+                    match operation {
+                        token_broadcast::Operation::Addition(addition) => {
+                            pass = addition.key.as_ref().map_or(false, |key| token_subscribe_filter(&request.get_ref(), &key));
+                        },
+                        token_broadcast::Operation::Invalidation(invalidation) => {
+                            pass = invalidation.key.as_ref().map_or(false, |key| token_subscribe_filter(&request.get_ref(), &key));
+                        },
+                        token_broadcast::Operation::Update(update) => {
+                            pass = update.original.as_ref().map_or(false, |key| token_subscribe_filter(&request.get_ref(), &key.key.as_ref().unwrap()));
+                        },
+                    }
+                    if pass {
+                        tx.send(Ok(update)).await.unwrap();
+                    }
+                }
+            }
+        });
+        Ok(Response::new(ReceiverStream::new(rx)))
     }
 
     async fn check(
