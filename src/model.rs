@@ -13,6 +13,11 @@ pub struct Token {
     pub timestamp: chrono::NaiveDateTime,
 }
 
+pub struct TokenUpdate {
+    pub original: Token,
+    pub delta: Token,
+}
+
 impl From<TokenKey> for cm::TokenKey {
     fn from(source: TokenKey) -> Self {
         Self { key: source.key }
@@ -33,6 +38,24 @@ impl From<Token> for cm::Token {
                 seconds: source.timestamp.timestamp(),
                 nanos: 0,
             }),
+        }
+    }
+}
+
+impl From<TokenUpdate> for cm::TokenUpdate {
+    fn from(source: TokenUpdate) -> Self {
+        Self {
+            original: Some(source.original.into()),
+            delta: Some(source.delta.into()),
+        }
+    }
+}
+
+impl From<cm::TokenUpdate> for TokenUpdate {
+    fn from(source: cm::TokenUpdate) -> Self {
+        Self {
+            original: source.original.unwrap().into(),
+            delta: source.delta.unwrap().into(),
         }
     }
 }
