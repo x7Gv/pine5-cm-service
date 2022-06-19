@@ -4,13 +4,13 @@ use crate::cm::{self, Tokens};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct TokenKey {
-    key: String,
+    pub key: String,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Token {
-    key: TokenKey,
-    timestamp: chrono::NaiveDateTime,
+    pub key: TokenKey,
+    pub timestamp: chrono::NaiveDateTime,
 }
 
 impl From<TokenKey> for cm::TokenKey {
@@ -33,6 +33,29 @@ impl From<Token> for cm::Token {
                 seconds: source.timestamp.timestamp(),
                 nanos: 0,
             }),
+        }
+    }
+}
+
+impl From<TokenKey> for Token {
+    fn from(source: TokenKey) -> Self {
+        Token::new(source)
+    }
+}
+
+impl TokenKey {
+    pub fn new(key: &str) -> Self {
+        Self {
+            key: key.to_string(),
+        }
+    }
+}
+
+impl Token {
+    pub fn new(key: TokenKey) -> Self {
+        Self {
+            key,
+            timestamp: chrono::Utc::now().naive_utc(),
         }
     }
 }

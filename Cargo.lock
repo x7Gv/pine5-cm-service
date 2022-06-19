@@ -874,6 +874,7 @@ dependencies = [
  "hyper",
  "prost",
  "prost-types",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tonic",

@@ -27,9 +27,9 @@ pub mod cm {
 
 #[async_trait]
 pub trait TokenDb: Send + Sync + 'static {
-    async fn insert(&self, token: &model::TokenKey) -> Result<model::Token, Box<dyn std::error::Error>>;
-    async fn update(&self, token: &model::TokenKey) -> Result<model::Token, Box<dyn std::error::Error>>;
-    async fn invalidate(&self, token: &model::TokenKey) -> Result<model::Token, Box<dyn std::error::Error>>;
+    async fn insert(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError>;
+    async fn update(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError>;
+    async fn invalidate(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError>;
 }
 
 pub enum TokenDbInsertResult {
@@ -51,25 +51,33 @@ impl TokenDbInMemory {
     }
 }
 
+pub enum TokenDbError {
+    TokenNotPresent(model::TokenKey),
+    Unknown,
+}
+
 #[async_trait]
 impl TokenDb for TokenDbInMemory {
-    async fn insert(&self, token: String) -> Result<(), Box<dyn std::error::Error>> {
+    async fn insert(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError> {
         {
             let mut w0 = self.db.write().await;
-            w0.insert(token, std::time::Instant::now());
+            let t = model::Token::from(token.clone());
+            w0.insert(token.clone(), t.clone());
+            return Ok(t)
         }
-        Ok(())
     }
 
-    async fn update(&self, token: String) -> Result<(), Box<dyn std::error::Error>> {
+    async fn update(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError> {
         {
             let r0 = self.db.read().await;
             if r0.contains_key(&token) {
                 let mut w0 = self.db.write().await;
-                w0.insert(token, std::time::Instant::now());
+                let t = model::Token::from(token.clone());
+                w0.insert(token.clone(), t.clone());
+                return Ok(t)
+            } else {
             }
         }
-        Ok(())
     }
 
     async fn invalidate(&self, token: String) -> Result<(), Box<dyn std::error::Error>> {
