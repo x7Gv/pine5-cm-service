@@ -71,6 +71,7 @@ message TokenRegisterResponse {
         UNKNOWN = 3;
     }
     Status status = 1;
+    Token token = 2;
 }
 
 message TokenKey {
