@@ -1,15 +1,15 @@
 use cm::cm_message_server::{CmMessage, CmMessageServer};
 use cm::cm_token_server::{CmToken, CmTokenServer};
 use cm::message_broadcast::Operation;
-use cm::message_send_response::{SendStatus, self};
 use cm::token_broadcast::{self};
 use cm::{
-    token_register_response, HealthCheckRequest, HealthCheckResponse, MessageBroadcast,
+    HealthCheckRequest, HealthCheckResponse, MessageBroadcast,
     MessageSendRequest, MessageSendResponse, MessageSubscribeRequest, TokenBroadcast, TokenKey,
     TokenRegisterRequest, TokenRegisterResponse, TokenSubscribeRequest, TokenUpdate,
     TokenUpdateRequest, TokenUpdateResponse,
 };
 
+use hyper::http::status;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
@@ -150,21 +150,25 @@ impl CmMessage for CmMessageService {
     ) -> Result<Response<MessageSendResponse>, Status> {
         let message = match request.into_inner().inner {
             Some(message) => message,
-            None => return Ok(Response::new(MessageSendResponse { status: message_send_response::SendStatus::Failure as i32 })),
+            None => {
+                let status = Status::invalid_argument("inner message not present");
+                return Err(status);
+            },
         };
 
         let bcast = MessageBroadcast {
-            operation: Some(Operation::Send(message)),
+            operation: Some(Operation::Send(message.clone())),
         };
 
         match self.subscribe_tx.send(bcast) {
             Ok(_) => {},
-            Err(_) => return Ok(Response::new(MessageSendResponse { status: message_send_response::SendStatus::Failure as i32 })),
+            Err(_) => {
+                let status = Status::internal("channel broken");
+                return Err(status)
+            },
         };
 
-        Ok(Response::new(MessageSendResponse {
-            status: SendStatus::Success as i32,
-        }))
+        Ok(Response::new(MessageSendResponse { sent: Some(message) }))
     }
 
     type MessageSubscribeStream = ReceiverStream<Result<MessageBroadcast, Status>>;
@@ -248,12 +252,21 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
     ) -> Result<Response<TokenRegisterResponse>, Status> {
         let token = match request.into_inner().token {
             Some(tok) => tok,
-            None => return Ok(Response::new(TokenRegisterResponse { status: token_register_response::Status::Invalid as i32, token: None })),
+            None => {
+                let status = Status::invalid_argument("token not present");
+                return Err(status);
+            },
         };
 
         let token = match self.db.insert(token.into()).await {
             Ok(tok) => tok,
-            Err(_) => return Ok(Response::new(TokenRegisterResponse { status: token_register_response::Status::Invalid as i32, token: None })),
+            Err(error) => {
+                let status = match error {
+                    TokenDbError::TokenNotPresent(tok) => Status::invalid_argument(format!("token `{}` not existing", tok.key)),
+                    TokenDbError::Unknown => Status::internal("database failed"),
+                };
+                return Err(status);
+            },
         };
 
         let bcast = TokenBroadcast {
@@ -262,7 +275,6 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
 
         self.subscribe_tx.send(bcast).unwrap();
         Ok(Response::new(TokenRegisterResponse {
-            status: token_register_response::Status::Success as i32,
             token: Some(token.into()),
         }))
     }
@@ -273,15 +285,21 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
     ) -> Result<Response<TokenUpdateResponse>, Status> {
         let original_key = match request.into_inner().key {
             Some(key) => key,
-            None => return Ok(Response::new(TokenUpdateResponse {
-                token: None,
-                timestamp: None
-            })),
+            None => {
+                let status = Status::invalid_argument("token not present");
+                return Err(status);
+            },
         }.into();
 
         let token_update = match self.db.update(original_key).await {
             Ok(tok) => tok,
-            Err(_) => return Ok(Response::new(TokenUpdateResponse { token: None, timestamp: None })),
+            Err(error) => {
+                let status = match error {
+                    TokenDbError::TokenNotPresent(tok) => Status::invalid_argument(format!("token `{}` not existing", tok.key)),
+                    TokenDbError::Unknown => Status::internal("database failed"),
+                };
+                return Err(status);
+            },
         };
 
         let bcast = TokenBroadcast {
