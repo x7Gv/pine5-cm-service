@@ -27,7 +27,7 @@ impl From<TokenKey> for cm::TokenKey {
     }
 }
 
-impl<'a> From<&TokenKey> for cm::TokenKey {
+impl From<&TokenKey> for cm::TokenKey {
     fn from(source: &TokenKey) -> Self {
         Self {
             key: source.key.to_string(),
@@ -35,7 +35,7 @@ impl<'a> From<&TokenKey> for cm::TokenKey {
     }
 }
 
-impl<'a> From<cm::TokenKey> for TokenKey {
+impl From<cm::TokenKey> for TokenKey {
     fn from(source: cm::TokenKey) -> Self {
         Self { key: Arc::new(source.key) }
     }
@@ -53,7 +53,7 @@ impl From<Token> for cm::Token {
     }
 }
 
-impl<'a> From<&Token> for cm::Token {
+impl From<&Token> for cm::Token {
     fn from(source: &Token) -> Self {
         Self {
             key: Some(source.key.clone().into()),
@@ -65,7 +65,7 @@ impl<'a> From<&Token> for cm::Token {
     }
 }
 
-impl<'a> From<TokenUpdate> for cm::TokenUpdate {
+impl From<TokenUpdate> for cm::TokenUpdate {
     fn from(source: TokenUpdate) -> Self {
         Self {
             original: Some(source.original.into()),
@@ -74,7 +74,7 @@ impl<'a> From<TokenUpdate> for cm::TokenUpdate {
     }
 }
 
-impl<'a> From<cm::TokenUpdate> for TokenUpdate {
+impl From<cm::TokenUpdate> for TokenUpdate {
     fn from(source: cm::TokenUpdate) -> Self {
         Self {
             original: source.original.unwrap().into(),
@@ -83,7 +83,7 @@ impl<'a> From<cm::TokenUpdate> for TokenUpdate {
     }
 }
 
-impl<'a> From<TokenKey> for Token {
+impl From<TokenKey> for Token {
     fn from(source: TokenKey) -> Self {
         Token::new(source)
     }
@@ -106,7 +106,7 @@ impl Token {
     }
 }
 
-impl<'a> From<cm::Token> for Token {
+impl From<cm::Token> for Token {
     fn from(source: cm::Token) -> Self {
         Self {
             key: source.key.unwrap().into(),
@@ -115,7 +115,7 @@ impl<'a> From<cm::Token> for Token {
     }
 }
 
-impl<'a> From<cm::TokenKeys> for Vec<TokenKey> {
+impl From<cm::TokenKeys> for Vec<TokenKey> {
     fn from(source: cm::TokenKeys) -> Self {
         source
             .keys
@@ -125,7 +125,7 @@ impl<'a> From<cm::TokenKeys> for Vec<TokenKey> {
     }
 }
 
-impl<'a> From<&[TokenKey]> for cm::TokenKeys {
+impl From<&[TokenKey]> for cm::TokenKeys {
     fn from(source: &[TokenKey]) -> Self {
         Self {
             keys: source
@@ -136,7 +136,7 @@ impl<'a> From<&[TokenKey]> for cm::TokenKeys {
     }
 }
 
-impl<'a> From<cm::Tokens> for Vec<Token> {
+impl From<cm::Tokens> for Vec<Token> {
     fn from(source: cm::Tokens) -> Self {
         source
             .tokens
@@ -146,7 +146,7 @@ impl<'a> From<cm::Tokens> for Vec<Token> {
     }
 }
 
-impl<'a> From<&[Token]> for Tokens {
+impl From<&[Token]> for Tokens {
     fn from(source: &[Token]) -> Self {
         Self {
             tokens: source
