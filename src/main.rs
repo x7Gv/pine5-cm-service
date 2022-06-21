@@ -6,8 +6,8 @@ use cm::token_broadcast::{self};
 use cm::{
     token_register_response, HealthCheckRequest, HealthCheckResponse, MessageBroadcast,
     MessageSendRequest, MessageSendResponse, MessageSubscribeRequest, TokenBroadcast, TokenKey,
-    TokenRegisterRequest, TokenRegisterResponse, TokenSubscribeRequest, TokenUpdateRequest,
-    TokenUpdateResponse,
+    TokenRegisterRequest, TokenRegisterResponse, TokenSubscribeRequest, TokenUpdate,
+    TokenUpdateRequest, TokenUpdateResponse,
 };
 
 use tonic::transport::Server;
@@ -15,7 +15,7 @@ use tonic::{Request, Response, Status};
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::async_trait;
 
@@ -27,23 +27,30 @@ pub mod cm {
 
 #[async_trait]
 pub trait TokenDb: Send + Sync + 'static {
-    async fn insert(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError>;
-    async fn update(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError>;
-    async fn invalidate(&self, token: &model::TokenKey) -> Result<(), TokenDbError>;
+    async fn insert(&self, token: model::TokenKey) -> Result<model::Token, TokenDbError>;
+    async fn update(&self, token: model::TokenKey) -> Result<model::TokenUpdate, TokenDbError>;
+    async fn invalidate(&self, token: model::TokenKey) -> Result<(), TokenDbError>;
 }
 
 pub struct TokenDbInMemory {
-    db: Arc<RwLock<HashMap<model::TokenKey, model::Token>>>,
+    db: Arc<Mutex<HashMap<model::TokenKey, model::Token>>>,
 }
 
 impl TokenDbInMemory {
     pub fn new() -> Self {
         Self {
-            db: Arc::new(RwLock::new(HashMap::new())),
+            db: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
 
+impl Default for TokenDbInMemory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum TokenDbError {
     TokenNotPresent(model::TokenKey),
     Unknown,
@@ -51,28 +58,45 @@ pub enum TokenDbError {
 
 #[async_trait]
 impl TokenDb for TokenDbInMemory {
-    async fn insert(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError> {
-            let mut w0 = self.db.write().await;
-            let t = model::Token::from(token.clone());
-            w0.insert(token.clone(), t.clone());
-            return Ok(t)
+    async fn insert(&self, token: model::TokenKey) -> Result<model::Token, TokenDbError> {
+        let t = model::Token::from(token.clone());
+
+        {
+            let mut locked = self.db.lock().await;
+
+            println!("{:?}", *locked);
+
+            locked.insert(token.clone(), t.clone());
+        }
+
+        return Ok(t);
     }
 
-    async fn update(&self, token: &model::TokenKey) -> Result<model::Token, TokenDbError> {
-            let r0 = self.db.read().await;
-            if r0.contains_key(&token) {
-                let mut w0 = self.db.write().await;
-                let t = model::Token::from(token.clone());
-                w0.insert(token.clone(), t.clone());
-                return Ok(t)
-            } else {
-                return Err(TokenDbError::TokenNotPresent(token.clone()));
-            }
+    async fn update(&self, token: model::TokenKey) -> Result<model::TokenUpdate, TokenDbError> {
+
+        let original_l = self.db.lock().await;
+        let original = original_l.get(&token).unwrap().clone();
+        drop(original_l);
+
+        let mut locked = self.db.lock().await;
+
+        println!("{:?}", *locked);
+
+        if locked.contains_key(&token) {
+            let delta = model::Token::from(token.clone());
+            locked.insert(token.clone(), delta.clone());
+            return Ok(model::TokenUpdate {
+                original: original.clone(),
+                delta,
+            });
+        } else {
+            return Err(TokenDbError::TokenNotPresent(token.clone()));
+        }
     }
 
-    async fn invalidate(&self, token: &model::TokenKey) -> Result<(), TokenDbError> {
-        let mut w0 = self.db.write().await;
-        w0.remove(&token);
+    async fn invalidate(&self, token: model::TokenKey) -> Result<(), TokenDbError> {
+        let mut locked = self.db.lock().await;
+        locked.remove(&token);
         Ok(())
     }
 }
@@ -93,10 +117,10 @@ fn message_subscribe_filter(request: &MessageSubscribeRequest, key: &TokenKey) -
         if let Some(predicate) = &filter.predicate {
             match predicate {
                 cm::message_subscribe_filter::Predicate::Complement(complement) => {
-                    return !complement.keys.contains(&key)
+                    return !complement.keys.contains(key)
                 }
                 cm::message_subscribe_filter::Predicate::Intersection(intersection) => {
-                    return intersection.keys.contains(&key);
+                    return intersection.keys.contains(key);
                 }
                 cm::message_subscribe_filter::Predicate::Union(_) => {
                     return true;
@@ -145,7 +169,7 @@ impl CmMessage for CmMessageService {
                                 let mut pass = true;
 
                                 for token in codomain.keys.iter() {
-                                    if !message_subscribe_filter(&request.get_ref(), &token) {
+                                    if !message_subscribe_filter(request.get_ref(), token) {
                                         pass = false;
                                     }
                                 }
@@ -185,14 +209,14 @@ fn token_subscribe_filter(request: &TokenSubscribeRequest, key: &TokenKey) -> bo
         if let Some(predicate) = &filter.predicate {
             match predicate {
                 cm::token_subscribe_filter::Predicate::Complement(complement) => {
-                    return !complement.keys.contains(&key);
-                },
+                    return !complement.keys.contains(key);
+                }
                 cm::token_subscribe_filter::Predicate::Intersection(intersection) => {
                     return intersection.keys.contains(key);
-                },
-                cm::token_subscribe_filter::Predicate::Union(union) => {
+                }
+                cm::token_subscribe_filter::Predicate::Union(_) => {
                     return true;
-                },
+                }
             }
         }
     }
@@ -208,13 +232,16 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
     ) -> Result<Response<TokenRegisterResponse>, Status> {
         let token = request.into_inner().token.unwrap();
 
+        let token = self.db.insert(token.into()).await.unwrap();
+
         let bcast = TokenBroadcast {
-            operation: Some(token_broadcast::Operation::Addition(token)),
+            operation: Some(token_broadcast::Operation::Addition(token.clone().into())),
         };
 
         self.subscribe_tx.send(bcast).unwrap();
         Ok(Response::new(TokenRegisterResponse {
             status: token_register_response::Status::Success as i32,
+            token: Some(token.into()),
         }))
     }
 
@@ -222,7 +249,26 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
         &self,
         request: Request<TokenUpdateRequest>,
     ) -> Result<Response<TokenUpdateResponse>, Status> {
-        todo!()
+        let original_key = request.into_inner().key.unwrap().into();
+
+        let token_update = self.db.update(original_key).await.unwrap();
+
+        let bcast = TokenBroadcast {
+            operation: Some(token_broadcast::Operation::Update(TokenUpdate {
+                original: Some(token_update.original.clone().into()),
+                delta: Some(token_update.delta.clone().into()),
+            })),
+        };
+
+        println!("testeronis");
+
+        self.subscribe_tx.send(bcast).unwrap();
+
+        let timestamp = cm::Token::from(token_update.delta.clone()).timestamp;
+        Ok(Response::new(TokenUpdateResponse {
+            token: Some(token_update.delta.into()),
+            timestamp,
+        }))
     }
 
     type TokenSubscribeStream = ReceiverStream<Result<TokenBroadcast, Status>>;
@@ -238,19 +284,27 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
             while let Ok(update) = subscribe_rx.recv().await {
                 if let Some(operation) = &update.operation {
 
-                    let mut pass = false;
-
-                    match operation {
+                    let pass = match operation {
                         token_broadcast::Operation::Addition(addition) => {
-                            pass = addition.key.as_ref().map_or(false, |key| token_subscribe_filter(&request.get_ref(), &key));
-                        },
+                            addition.key.as_ref().map_or(false, |key| {
+                                token_subscribe_filter(request.get_ref(), key)
+                            })
+                        }
                         token_broadcast::Operation::Invalidation(invalidation) => {
-                            pass = invalidation.key.as_ref().map_or(false, |key| token_subscribe_filter(&request.get_ref(), &key));
-                        },
+                            invalidation.key.as_ref().map_or(false, |key| {
+                                token_subscribe_filter(request.get_ref(), key)
+                            })
+                        }
                         token_broadcast::Operation::Update(update) => {
-                            pass = update.original.as_ref().map_or(false, |key| token_subscribe_filter(&request.get_ref(), &key.key.as_ref().unwrap()));
-                        },
-                    }
+                            update.original.as_ref().map_or(false, |key| {
+                                token_subscribe_filter(
+                                    request.get_ref(),
+                                    key.key.as_ref().unwrap(),
+                                )
+                            })
+                        }
+                    };
+
                     if pass {
                         tx.send(Ok(update)).await.unwrap();
                     }
@@ -283,16 +337,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Service listening on: {}", addr);
 
-    let broadcast = broadcast::channel(16);
+    let message_broadcast = broadcast::channel(16);
 
     let message = CmMessageService {
-        subscribe_tx: broadcast.0,
+        subscribe_tx: message_broadcast.0,
+    };
+
+    let token_broadcast = broadcast::channel(16);
+
+    let token = CmTokenService {
+        db: Arc::new(TokenDbInMemory::new()),
+        subscribe_tx: token_broadcast.0,
     };
 
     let message_svc = CmMessageServer::new(message);
+    let token_svc = CmTokenServer::new(token);
 
     Server::builder()
         .add_service(message_svc)
+        .add_service(token_svc)
         .serve(addr)
         .await?;
 

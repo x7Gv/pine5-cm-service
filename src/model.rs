@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
+use crate::cm::{self, Tokens};
 use chrono::NaiveDateTime;
 use prost_types::Timestamp;
-use crate::cm::{self, Tokens};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct TokenKey {
-    pub key: String,
+    pub key: Arc<String>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -13,6 +15,7 @@ pub struct Token {
     pub timestamp: chrono::NaiveDateTime,
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct TokenUpdate {
     pub original: Token,
     pub delta: Token,
@@ -20,13 +23,21 @@ pub struct TokenUpdate {
 
 impl From<TokenKey> for cm::TokenKey {
     fn from(source: TokenKey) -> Self {
-        Self { key: source.key }
+        Self { key: source.key.to_string() }
     }
 }
 
-impl From<cm::TokenKey> for TokenKey {
+impl<'a> From<&TokenKey> for cm::TokenKey {
+    fn from(source: &TokenKey) -> Self {
+        Self {
+            key: source.key.to_string(),
+        }
+    }
+}
+
+impl<'a> From<cm::TokenKey> for TokenKey {
     fn from(source: cm::TokenKey) -> Self {
-        Self { key: source.key }
+        Self { key: Arc::new(source.key) }
     }
 }
 
@@ -42,7 +53,19 @@ impl From<Token> for cm::Token {
     }
 }
 
-impl From<TokenUpdate> for cm::TokenUpdate {
+impl<'a> From<&Token> for cm::Token {
+    fn from(source: &Token) -> Self {
+        Self {
+            key: Some(source.key.clone().into()),
+            timestamp: Some(Timestamp {
+                seconds: source.timestamp.timestamp(),
+                nanos: 0,
+            }),
+        }
+    }
+}
+
+impl<'a> From<TokenUpdate> for cm::TokenUpdate {
     fn from(source: TokenUpdate) -> Self {
         Self {
             original: Some(source.original.into()),
@@ -51,7 +74,7 @@ impl From<TokenUpdate> for cm::TokenUpdate {
     }
 }
 
-impl From<cm::TokenUpdate> for TokenUpdate {
+impl<'a> From<cm::TokenUpdate> for TokenUpdate {
     fn from(source: cm::TokenUpdate) -> Self {
         Self {
             original: source.original.unwrap().into(),
@@ -60,16 +83,16 @@ impl From<cm::TokenUpdate> for TokenUpdate {
     }
 }
 
-impl From<TokenKey> for Token {
+impl<'a> From<TokenKey> for Token {
     fn from(source: TokenKey) -> Self {
         Token::new(source)
     }
 }
 
 impl TokenKey {
-    pub fn new(key: &str) -> Self {
+    pub fn new(key: impl Into<String>) -> Self {
         Self {
-            key: key.to_string(),
+            key: Arc::new(key.into()),
         }
     }
 }
@@ -83,7 +106,7 @@ impl Token {
     }
 }
 
-impl From<cm::Token> for Token {
+impl<'a> From<cm::Token> for Token {
     fn from(source: cm::Token) -> Self {
         Self {
             key: source.key.unwrap().into(),
@@ -92,34 +115,44 @@ impl From<cm::Token> for Token {
     }
 }
 
-impl From<cm::TokenKeys> for Vec<TokenKey> {
+impl<'a> From<cm::TokenKeys> for Vec<TokenKey> {
     fn from(source: cm::TokenKeys) -> Self {
-        source.keys.into_iter().map(|key| TokenKey::from(key)).collect()
+        source
+            .keys
+            .into_iter()
+            .map(TokenKey::from)
+            .collect()
     }
 }
 
-impl From<Vec<TokenKey>> for cm::TokenKeys {
-    fn from(source: Vec<TokenKey>) -> Self {
+impl<'a> From<&[TokenKey]> for cm::TokenKeys {
+    fn from(source: &[TokenKey]) -> Self {
         Self {
-            keys: source.into_iter()
-                .map(|key| cm::TokenKey::from(key))
-                .collect()
+            keys: source
+                .iter()
+                .map(cm::TokenKey::from)
+                .collect(),
         }
     }
 }
 
-impl From<cm::Tokens> for Vec<Token> {
+impl<'a> From<cm::Tokens> for Vec<Token> {
     fn from(source: cm::Tokens) -> Self {
-        source.tokens.into_iter().map(|token| Token::from(token)).collect()
+        source
+            .tokens
+            .into_iter()
+            .map(Token::from)
+            .collect()
     }
 }
 
-impl From<Vec<Token>> for Tokens {
-    fn from(source: Vec<Token>) -> Self {
+impl<'a> From<&[Token]> for Tokens {
+    fn from(source: &[Token]) -> Self {
         Self {
-            tokens: source.into_iter()
-                .map(|token| cm::Token::from(token))
-                .collect()
+            tokens: source
+                .iter()
+                .map(cm::Token::from)
+                .collect(),
         }
     }
 }

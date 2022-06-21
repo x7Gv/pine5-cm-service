@@ -60,13 +60,13 @@ message TokenUpdateResponse {
 }
 
 message TokenRegisterRequest {
-    Token token = 1;
+    TokenKey token = 1;
 }
 
 message TokenRegisterResponse {
     enum Status {
         SUCCESS = 0;
-        INVALID = 1;
+        Invalid = 1;
         ALREADY_PRESENT = 2;
         UNKNOWN = 3;
     }
