@@ -1,7 +1,7 @@
 use cm::cm_message_server::{CmMessage, CmMessageServer};
 use cm::cm_token_server::{CmToken, CmTokenServer};
 use cm::message_broadcast::Operation;
-use cm::message_send_response::SendStatus;
+use cm::message_send_response::{SendStatus, self};
 use cm::token_broadcast::{self};
 use cm::{
     token_register_response, HealthCheckRequest, HealthCheckResponse, MessageBroadcast,
@@ -74,24 +74,34 @@ impl TokenDb for TokenDbInMemory {
 
     async fn update(&self, token: model::TokenKey) -> Result<model::TokenUpdate, TokenDbError> {
 
-        let original_l = self.db.lock().await;
-        let original = original_l.get(&token).unwrap().clone();
-        drop(original_l);
+        let mut original: Option<model::Token> = None;
+
+        {
+            let locked = self.db.lock().await;
+            let tok = locked.get(&token).clone();
+
+            original = match tok {
+                Some(tkn) => Some(tkn.clone()),
+                None => return Err(TokenDbError::TokenNotPresent(token.clone())),
+            }
+        }
 
         let mut locked = self.db.lock().await;
-
-        println!("{:?}", *locked);
 
         if locked.contains_key(&token) {
             let delta = model::Token::from(token.clone());
             locked.insert(token.clone(), delta.clone());
-            return Ok(model::TokenUpdate {
-                original: original.clone(),
-                delta,
-            });
-        } else {
-            return Err(TokenDbError::TokenNotPresent(token.clone()));
+
+            match original {
+                Some(tok) => return Ok(model::TokenUpdate {
+                    original: tok,
+                    delta,
+                }),
+                None => return Err(TokenDbError::TokenNotPresent(token.clone())),
+            };
         }
+
+        return Err(TokenDbError::TokenNotPresent(token.clone()));
     }
 
     async fn invalidate(&self, token: model::TokenKey) -> Result<(), TokenDbError> {
@@ -138,13 +148,19 @@ impl CmMessage for CmMessageService {
         &self,
         request: Request<MessageSendRequest>,
     ) -> Result<Response<MessageSendResponse>, Status> {
-        let message = request.into_inner().inner.unwrap();
+        let message = match request.into_inner().inner {
+            Some(message) => message,
+            None => return Ok(Response::new(MessageSendResponse { status: message_send_response::SendStatus::Failure as i32 })),
+        };
 
         let bcast = MessageBroadcast {
             operation: Some(Operation::Send(message)),
         };
 
-        self.subscribe_tx.send(bcast).unwrap();
+        match self.subscribe_tx.send(bcast) {
+            Ok(_) => {},
+            Err(_) => return Ok(Response::new(MessageSendResponse { status: message_send_response::SendStatus::Failure as i32 })),
+        };
 
         Ok(Response::new(MessageSendResponse {
             status: SendStatus::Success as i32,
@@ -175,7 +191,7 @@ impl CmMessage for CmMessageService {
                                 }
 
                                 if pass {
-                                    tx.send(Ok(update)).await.unwrap()
+                                    tx.send(Ok(update)).await.unwrap();
                                 }
                             }
                         }
@@ -230,9 +246,15 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
         &self,
         request: Request<TokenRegisterRequest>,
     ) -> Result<Response<TokenRegisterResponse>, Status> {
-        let token = request.into_inner().token.unwrap();
+        let token = match request.into_inner().token {
+            Some(tok) => tok,
+            None => return Ok(Response::new(TokenRegisterResponse { status: token_register_response::Status::Invalid as i32, token: None })),
+        };
 
-        let token = self.db.insert(token.into()).await.unwrap();
+        let token = match self.db.insert(token.into()).await {
+            Ok(tok) => tok,
+            Err(_) => return Ok(Response::new(TokenRegisterResponse { status: token_register_response::Status::Invalid as i32, token: None })),
+        };
 
         let bcast = TokenBroadcast {
             operation: Some(token_broadcast::Operation::Addition(token.clone().into())),
@@ -249,9 +271,18 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
         &self,
         request: Request<TokenUpdateRequest>,
     ) -> Result<Response<TokenUpdateResponse>, Status> {
-        let original_key = request.into_inner().key.unwrap().into();
+        let original_key = match request.into_inner().key {
+            Some(key) => key,
+            None => return Ok(Response::new(TokenUpdateResponse {
+                token: None,
+                timestamp: None
+            })),
+        }.into();
 
-        let token_update = self.db.update(original_key).await.unwrap();
+        let token_update = match self.db.update(original_key).await {
+            Ok(tok) => tok,
+            Err(_) => return Ok(Response::new(TokenUpdateResponse { token: None, timestamp: None })),
+        };
 
         let bcast = TokenBroadcast {
             operation: Some(token_broadcast::Operation::Update(TokenUpdate {
