@@ -65,6 +65,158 @@ fn message_subscribe_filter(request: &MessageSubscribeRequest, key: &TokenKey) -
     false
 }
 
+#[cfg(test)]
+pub mod tests {
+
+    use super::cm::TokenKey;
+    use super::cm::MessageSubscribeRequest;
+    use super::cm::MessageSubscribeFilter;
+    use super::cm::TokenKeys;
+    use super::cm::message_subscribe_filter;
+    use super::message_subscribe_filter;
+
+    #[test]
+    fn filter_complement() {
+        let set0: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "b".to_string(),
+            },
+        ];
+        let set1: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "c".to_string(),
+            },
+            TokenKey {
+                key: "d".to_string(),
+            },
+        ];
+
+        let set2: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "c".to_string(),
+            },
+        ];
+
+        let req0 = MessageSubscribeRequest {
+            filter: Some(MessageSubscribeFilter {
+                predicate: Some(message_subscribe_filter::Predicate::Complement(TokenKeys {
+                    keys: set0.clone(),
+                })),
+            }),
+        };
+
+        {
+            let mut pass = true;
+            set0.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+
+        {
+            let mut pass = true;
+            set1.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, true);
+        }
+
+        {
+            let mut pass = true;
+            set2.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+    }
+
+    #[test]
+    fn filter_intersection() {
+        let set0: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "b".to_string(),
+            },
+        ];
+        let set1: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "c".to_string(),
+            },
+            TokenKey {
+                key: "d".to_string(),
+            },
+        ];
+
+        let set2: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "c".to_string(),
+            },
+        ];
+
+        let req0 = MessageSubscribeRequest {
+             filter: Some(MessageSubscribeFilter {
+                predicate: Some(message_subscribe_filter::Predicate::Intersection(TokenKeys {
+                    keys: set0.clone(),
+                })),
+            }),
+         };
+
+        {
+            let mut pass = true;
+            set0.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, true);
+        }
+
+        {
+            let mut pass = true;
+            set1.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+
+        {
+            let mut pass = true;
+            set2.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+    }
+}
+
+
 #[async_trait]
 impl CmMessage for CmMessageService {
     async fn message_send(

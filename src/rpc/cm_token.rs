@@ -75,6 +75,7 @@ fn token_subscribe_filter(request: &TokenSubscribeRequest, key: &TokenKey) -> bo
     false
 }
 
+#[cfg(test)]
 pub mod tests {
 
     use super::cm::TokenKey;
