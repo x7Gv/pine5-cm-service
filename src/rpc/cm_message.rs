@@ -71,7 +71,6 @@ impl CmMessage for CmMessageService {
         &self,
         request: Request<MessageSendRequest>,
     ) -> Result<Response<MessageSendResponse>, Status> {
-
         // Assert that there is an inner message present in the request.
         let message = match &request.get_ref().inner {
             Some(message) => message,
@@ -125,7 +124,6 @@ impl CmMessage for CmMessageService {
         let mut subscribe_rx = self.subscribe_tx.subscribe();
         tokio::spawn(async move {
             while let Ok(update) = subscribe_rx.recv().await {
-
                 // Match the defined operation and handle the set logic.
                 if let Some(operation) = &update.operation {
                     match operation {
@@ -145,12 +143,12 @@ impl CmMessage for CmMessageService {
                                 if pass {
                                     // The update is in domain. Send it to the master process for the RPC stream.
                                     match tx.send(Ok(update)).await {
-                                        Ok(_) => {},
+                                        Ok(_) => {}
                                         Err(_) => {
                                             // Channel is somehow broken. Prevent exhaustion and break the loop.
                                             info!("channel closed");
                                             break;
-                                        },
+                                        }
                                     };
                                 }
                             }
