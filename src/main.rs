@@ -9,14 +9,25 @@ use tonic::transport::Server;
 
 use rpc::cm;
 use rpc::cm_message::CmMessageService;
+use tracing::{info, Instrument, Level};
 
 use crate::rpc::cm_token::CmTokenService;
 
+fn setup_log() {
+    if cfg!(debug_assertions) {
+        tracing_subscriber::fmt()
+            .with_max_level(Level::DEBUG)
+            .init();
+    } else {
+        tracing_subscriber::fmt().init();
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:10000".parse().unwrap();
+    setup_log();
 
-    println!("Service listening on: {}", addr);
+    let addr = "[::1]:10000".parse().unwrap();
 
     let message = CmMessageService::default();
     let token = CmTokenService::default();
@@ -24,7 +35,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let message_svc = CmMessageServer::new(message);
     let token_svc = CmTokenServer::new(token);
 
+    info!(message = "Starting server.", %addr);
+
     Server::builder()
+        .trace_fn(|_| tracing::info_span!("cm_server"))
         .add_service(message_svc)
         .add_service(token_svc)
         .serve(addr)

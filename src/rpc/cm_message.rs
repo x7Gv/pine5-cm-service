@@ -8,6 +8,8 @@ use tonic::async_trait;
 use tonic::Request;
 use tonic::Response;
 use tonic::Status;
+use tracing::debug;
+use tracing::info;
 
 use super::cm::cm_message_server::CmMessage;
 use super::cm::message_broadcast::Operation;
@@ -69,10 +71,11 @@ impl CmMessage for CmMessageService {
         &self,
         request: Request<MessageSendRequest>,
     ) -> Result<Response<MessageSendResponse>, Status> {
-        let message = match request.into_inner().inner {
+        let message = match &request.get_ref().inner {
             Some(message) => message,
             None => {
                 let status = Status::invalid_argument("inner message not present");
+                info!(status = ?&status, "request failed");
                 return Err(status);
             }
         };
@@ -85,12 +88,19 @@ impl CmMessage for CmMessageService {
             Ok(_) => {}
             Err(_) => {
                 let status = Status::internal("channel broken");
+                info!(status = ?&status, "request failed");
                 return Err(status);
             }
         };
 
+        info!(
+            "\nrpc#MessageSend :: ({:?}) \n\n{:?}\n",
+            &request.get_ref(),
+            &message
+        );
+
         Ok(Response::new(MessageSendResponse {
-            sent: Some(message),
+            sent: Some(message.clone()),
         }))
     }
 
@@ -102,6 +112,9 @@ impl CmMessage for CmMessageService {
     ) -> Result<Response<Self::MessageSubscribeStream>, Status> {
         let (tx, rx) = mpsc::channel(4);
 
+        let req = request.into_inner().clone();
+        let req2 = req.clone();
+
         let mut subscribe_rx = self.subscribe_tx.subscribe();
         tokio::spawn(async move {
             while let Ok(update) = subscribe_rx.recv().await {
@@ -112,13 +125,20 @@ impl CmMessage for CmMessageService {
                                 let mut pass = true;
 
                                 for token in codomain.keys.iter() {
-                                    if !message_subscribe_filter(request.get_ref(), token) {
+                                    if !message_subscribe_filter(&req, token) {
                                         pass = false;
+                                        debug!(tok = ?&token, "not in codomain");
                                     }
                                 }
 
                                 if pass {
-                                    tx.send(Ok(update)).await.unwrap();
+                                    match tx.send(Ok(update)).await {
+                                        Ok(_) => {},
+                                        Err(_) => {
+                                            info!("channel closed");
+                                            break;
+                                        },
+                                    };
                                 }
                             }
                         }
@@ -126,6 +146,8 @@ impl CmMessage for CmMessageService {
                 }
             }
         });
+
+        info!("\nrpc#MessageSubscribe :: ({:?})", &req2);
 
         Ok(Response::new(ReceiverStream::new(rx)))
     }
