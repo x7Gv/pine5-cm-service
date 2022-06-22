@@ -75,16 +75,165 @@ fn token_subscribe_filter(request: &TokenSubscribeRequest, key: &TokenKey) -> bo
     false
 }
 
+#[cfg(test)]
+pub mod tests {
+
+    use super::cm::TokenKey;
+    use super::cm::TokenSubscribeRequest;
+    use super::cm::TokenSubscribeFilter;
+    use super::cm::TokenKeys;
+    use super::cm::token_subscribe_filter;
+    use super::token_subscribe_filter;
+
+    #[test]
+    fn filter_complement() {
+        let set0: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "b".to_string(),
+            },
+        ];
+        let set1: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "c".to_string(),
+            },
+            TokenKey {
+                key: "d".to_string(),
+            },
+        ];
+
+        let set2: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "c".to_string(),
+            },
+        ];
+
+        let req0 = TokenSubscribeRequest {
+            filter: Some(TokenSubscribeFilter {
+                predicate: Some(token_subscribe_filter::Predicate::Complement(TokenKeys {
+                    keys: set0.clone(),
+                })),
+            }),
+        };
+
+        {
+            let mut pass = true;
+            set0.iter().for_each(|key| {
+                if !token_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+
+        {
+            let mut pass = true;
+            set1.iter().for_each(|key| {
+                if !token_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, true);
+        }
+
+        {
+            let mut pass = true;
+            set2.iter().for_each(|key| {
+                if !token_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+    }
+
+    #[test]
+    fn filter_intersection() {
+        let set0: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "b".to_string(),
+            },
+        ];
+        let set1: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "c".to_string(),
+            },
+            TokenKey {
+                key: "d".to_string(),
+            },
+        ];
+
+        let set2: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "c".to_string(),
+            },
+        ];
+
+        let req0 = TokenSubscribeRequest {
+             filter: Some(TokenSubscribeFilter {
+                predicate: Some(token_subscribe_filter::Predicate::Intersection(TokenKeys {
+                    keys: set0.clone(),
+                })),
+            }),
+         };
+
+        {
+            let mut pass = true;
+            set0.iter().for_each(|key| {
+                if !token_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, true);
+        }
+
+        {
+            let mut pass = true;
+            set1.iter().for_each(|key| {
+                if !token_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+
+        {
+            let mut pass = true;
+            set2.iter().for_each(|key| {
+                if !token_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+    }
+}
+
 #[async_trait]
 impl<Db: TokenDb> CmToken for CmTokenService<Db> {
-
     // TODO: Token validation
     /// Register a token to the database implementation.
     async fn token_register(
         &self,
         request: Request<TokenRegisterRequest>,
     ) -> Result<Response<TokenRegisterResponse>, Status> {
-
         let req0 = request.get_ref().clone();
 
         // Assert that there is a token present in the request.
@@ -119,7 +268,7 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
 
         // Send through the broadcast channel.
         match self.subscribe_tx.send(bcast) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(_) => {
                 let status = Status::internal("channel broken");
                 info!(status = ?&status, "request failed");
@@ -127,11 +276,7 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
             }
         }
 
-        info!(
-            "\nrpc::TokenRegister :: ({:?}) \n\n{:?}\n",
-            &req0,
-            &token,
-        );
+        info!("\nrpc::TokenRegister :: ({:?}) \n\n{:?}\n", &req0, &token,);
 
         // Ok, all things executed successfully. Send the response to finalize.
         Ok(Response::new(TokenRegisterResponse {
@@ -144,7 +289,6 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
         &self,
         request: Request<TokenUpdateRequest>,
     ) -> Result<Response<TokenUpdateResponse>, Status> {
-
         // Assert that the token in RPC is actually present.
         let original_key = match request.into_inner().key {
             Some(key) => key,
@@ -180,7 +324,7 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
         };
 
         match self.subscribe_tx.send(bcast) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(_) => {
                 let status = Status::internal("channel broken");
                 info!(status = ?&status, "request failed");
@@ -214,7 +358,6 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
 
         tokio::spawn(async move {
             while let Ok(update) = subscribe_rx.recv().await {
-
                 // Match the defined operation and handle the set logic.
                 if let Some(operation) = &update.operation {
                     // Determine whether or not the processed update is in the domain of the subscriber.
@@ -237,21 +380,19 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
                     if pass {
                         // The update is in domain. Send it to the master process for the RPC stream.
                         match tx.send(Ok(update)).await {
-                            Ok(_) => {},
+                            Ok(_) => {}
                             Err(_) => {
                                 // Channel is somehow broken. Prevent exhaustion and break the loop.
                                 info!("channel closed");
                                 break;
-                            },
+                            }
                         };
                     }
                 }
             }
         });
 
-        info!(
-            "\nrpc::TokenSubscribe :: ({:?})", &req2
-        );
+        info!("\nrpc::TokenSubscribe :: ({:?})", &req2);
 
         // Subscribed successfully, begin streaming.
         Ok(Response::new(ReceiverStream::new(rx)))

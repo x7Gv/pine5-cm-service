@@ -65,13 +65,164 @@ fn message_subscribe_filter(request: &MessageSubscribeRequest, key: &TokenKey) -
     false
 }
 
+#[cfg(test)]
+pub mod tests {
+
+    use super::cm::TokenKey;
+    use super::cm::MessageSubscribeRequest;
+    use super::cm::MessageSubscribeFilter;
+    use super::cm::TokenKeys;
+    use super::cm::message_subscribe_filter;
+    use super::message_subscribe_filter;
+
+    #[test]
+    fn filter_complement() {
+        let set0: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "b".to_string(),
+            },
+        ];
+        let set1: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "c".to_string(),
+            },
+            TokenKey {
+                key: "d".to_string(),
+            },
+        ];
+
+        let set2: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "c".to_string(),
+            },
+        ];
+
+        let req0 = MessageSubscribeRequest {
+            filter: Some(MessageSubscribeFilter {
+                predicate: Some(message_subscribe_filter::Predicate::Complement(TokenKeys {
+                    keys: set0.clone(),
+                })),
+            }),
+        };
+
+        {
+            let mut pass = true;
+            set0.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+
+        {
+            let mut pass = true;
+            set1.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, true);
+        }
+
+        {
+            let mut pass = true;
+            set2.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+    }
+
+    #[test]
+    fn filter_intersection() {
+        let set0: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "b".to_string(),
+            },
+        ];
+        let set1: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "c".to_string(),
+            },
+            TokenKey {
+                key: "d".to_string(),
+            },
+        ];
+
+        let set2: Vec<TokenKey> = vec![
+            TokenKey {
+                key: "a".to_string(),
+            },
+            TokenKey {
+                key: "c".to_string(),
+            },
+        ];
+
+        let req0 = MessageSubscribeRequest {
+             filter: Some(MessageSubscribeFilter {
+                predicate: Some(message_subscribe_filter::Predicate::Intersection(TokenKeys {
+                    keys: set0.clone(),
+                })),
+            }),
+         };
+
+        {
+            let mut pass = true;
+            set0.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, true);
+        }
+
+        {
+            let mut pass = true;
+            set1.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+
+        {
+            let mut pass = true;
+            set2.iter().for_each(|key| {
+                if !message_subscribe_filter(&req0, key) {
+                    pass = false;
+                }
+            });
+
+            assert_eq!(pass, false);
+        }
+    }
+}
+
+
 #[async_trait]
 impl CmMessage for CmMessageService {
     async fn message_send(
         &self,
         request: Request<MessageSendRequest>,
     ) -> Result<Response<MessageSendResponse>, Status> {
-
         // Assert that there is an inner message present in the request.
         let message = match &request.get_ref().inner {
             Some(message) => message,
@@ -125,7 +276,6 @@ impl CmMessage for CmMessageService {
         let mut subscribe_rx = self.subscribe_tx.subscribe();
         tokio::spawn(async move {
             while let Ok(update) = subscribe_rx.recv().await {
-
                 // Match the defined operation and handle the set logic.
                 if let Some(operation) = &update.operation {
                     match operation {
@@ -145,12 +295,12 @@ impl CmMessage for CmMessageService {
                                 if pass {
                                     // The update is in domain. Send it to the master process for the RPC stream.
                                     match tx.send(Ok(update)).await {
-                                        Ok(_) => {},
+                                        Ok(_) => {}
                                         Err(_) => {
                                             // Channel is somehow broken. Prevent exhaustion and break the loop.
                                             info!("channel closed");
                                             break;
-                                        },
+                                        }
                                     };
                                 }
                             }
