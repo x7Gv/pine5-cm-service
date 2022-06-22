@@ -71,6 +71,8 @@ impl CmMessage for CmMessageService {
         &self,
         request: Request<MessageSendRequest>,
     ) -> Result<Response<MessageSendResponse>, Status> {
+
+        // Assert that there is an inner message present in the request.
         let message = match &request.get_ref().inner {
             Some(message) => message,
             None => {
@@ -80,10 +82,12 @@ impl CmMessage for CmMessageService {
             }
         };
 
+        // Message is present. Now construct a broadcastable object and send it to the subscribers.
         let bcast = MessageBroadcast {
             operation: Some(Operation::Send(message.clone())),
         };
 
+        // Send through the broadcast channel.
         match self.subscribe_tx.send(bcast) {
             Ok(_) => {}
             Err(_) => {
@@ -99,6 +103,7 @@ impl CmMessage for CmMessageService {
             &message
         );
 
+        // Ok, all things executed successfully. Send the response to finalize.
         Ok(Response::new(MessageSendResponse {
             sent: Some(message.clone()),
         }))
@@ -110,20 +115,26 @@ impl CmMessage for CmMessageService {
         &self,
         request: Request<MessageSubscribeRequest>,
     ) -> Result<Response<Self::MessageSubscribeStream>, Status> {
+        // Spend up an internal mpsc channel for in process streaming.
         let (tx, rx) = mpsc::channel(4);
 
         let req = request.into_inner().clone();
         let req2 = req.clone();
 
+        // Take a new subscription for this instance of subscribe task.
         let mut subscribe_rx = self.subscribe_tx.subscribe();
         tokio::spawn(async move {
             while let Ok(update) = subscribe_rx.recv().await {
+
+                // Match the defined operation and handle the set logic.
                 if let Some(operation) = &update.operation {
                     match operation {
                         Operation::Send(message) => {
                             if let Some(codomain) = &message.codomain {
+                                // Determine whether or not the the processed update is in the domain of the subscriber.
                                 let mut pass = true;
 
+                                // If any of the keys in codomain is not in the range, negate.
                                 for token in codomain.keys.iter() {
                                     if !message_subscribe_filter(&req, token) {
                                         pass = false;
@@ -132,9 +143,11 @@ impl CmMessage for CmMessageService {
                                 }
 
                                 if pass {
+                                    // The update is in domain. Send it to the master process for the RPC stream.
                                     match tx.send(Ok(update)).await {
                                         Ok(_) => {},
                                         Err(_) => {
+                                            // Channel is somehow broken. Prevent exhaustion and break the loop.
                                             info!("channel closed");
                                             break;
                                         },
@@ -149,6 +162,7 @@ impl CmMessage for CmMessageService {
 
         info!("\nrpc#MessageSubscribe :: ({:?})", &req2);
 
+        // Subscribed successfully, begin streaming.
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 

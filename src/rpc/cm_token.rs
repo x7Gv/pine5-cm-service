@@ -112,11 +112,12 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
             }
         };
 
-        // The insert was successful. Now construct a broadcastable object and send it to subscribers.
+        // The insert was successful. Now construct a broadcastable object and send it to the subscribers.
         let bcast = TokenBroadcast {
             operation: Some(token_broadcast::Operation::Addition(token.clone().into())),
         };
 
+        // Send through the broadcast channel.
         match self.subscribe_tx.send(bcast) {
             Ok(_) => {},
             Err(_) => {
@@ -208,7 +209,7 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
         let req = request.into_inner().clone();
         let req2 = req.clone();
 
-        // take a new subscribtion for this instance of subscribe task.
+        // Take a new subscribtion for this instance of subscribe task.
         let mut subscribe_rx = self.subscribe_tx.subscribe();
 
         tokio::spawn(async move {
@@ -238,6 +239,7 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
                         match tx.send(Ok(update)).await {
                             Ok(_) => {},
                             Err(_) => {
+                                // Channel is somehow broken. Prevent exhaustion and break the loop.
                                 info!("channel closed");
                                 break;
                             },
@@ -251,6 +253,7 @@ impl<Db: TokenDb> CmToken for CmTokenService<Db> {
             "\nrpc::TokenSubscribe :: ({:?})", &req2
         );
 
+        // Subscribed successfully, begin streaming.
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 
