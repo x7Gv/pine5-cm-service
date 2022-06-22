@@ -23,7 +23,9 @@ pub struct TokenUpdate {
 
 impl From<TokenKey> for cm::TokenKey {
     fn from(source: TokenKey) -> Self {
-        Self { key: source.key.to_string() }
+        Self {
+            key: source.key.to_string(),
+        }
     }
 }
 
@@ -37,7 +39,9 @@ impl From<&TokenKey> for cm::TokenKey {
 
 impl From<cm::TokenKey> for TokenKey {
     fn from(source: cm::TokenKey) -> Self {
-        Self { key: Arc::new(source.key) }
+        Self {
+            key: Arc::new(source.key),
+        }
     }
 }
 
@@ -117,42 +121,28 @@ impl From<cm::Token> for Token {
 
 impl From<cm::TokenKeys> for Vec<TokenKey> {
     fn from(source: cm::TokenKeys) -> Self {
-        source
-            .keys
-            .into_iter()
-            .map(TokenKey::from)
-            .collect()
+        source.keys.into_iter().map(TokenKey::from).collect()
     }
 }
 
 impl From<&[TokenKey]> for cm::TokenKeys {
     fn from(source: &[TokenKey]) -> Self {
         Self {
-            keys: source
-                .iter()
-                .map(cm::TokenKey::from)
-                .collect(),
+            keys: source.iter().map(cm::TokenKey::from).collect(),
         }
     }
 }
 
 impl From<cm::Tokens> for Vec<Token> {
     fn from(source: cm::Tokens) -> Self {
-        source
-            .tokens
-            .into_iter()
-            .map(Token::from)
-            .collect()
+        source.tokens.into_iter().map(Token::from).collect()
     }
 }
 
 impl From<&[Token]> for Tokens {
     fn from(source: &[Token]) -> Self {
         Self {
-            tokens: source
-                .iter()
-                .map(cm::Token::from)
-                .collect(),
+            tokens: source.iter().map(cm::Token::from).collect(),
         }
     }
 }
