@@ -65,157 +65,38 @@ fn message_subscribe_filter(request: &MessageSubscribeRequest, key: &TokenKey) -
     false
 }
 
-#[cfg(test)]
-pub mod tests {
+fn messages_subscribe_filter<'a, 'b>(request: &'a MessageSubscribeRequest, keys: Vec<TokenKey>) -> bool {
 
-    use super::cm::TokenKey;
-    use super::cm::MessageSubscribeRequest;
-    use super::cm::MessageSubscribeFilter;
-    use super::cm::TokenKeys;
-    use super::cm::message_subscribe_filter;
-    use super::message_subscribe_filter;
+    if request.filter.as_ref().is_none() {
+        return false;
+    }
 
-    #[test]
-    fn filter_complement() {
-        let set0: Vec<TokenKey> = vec![
-            TokenKey {
-                key: "a".to_string(),
-            },
-            TokenKey {
-                key: "b".to_string(),
-            },
-        ];
-        let set1: Vec<TokenKey> = vec![
-            TokenKey {
-                key: "c".to_string(),
-            },
-            TokenKey {
-                key: "d".to_string(),
-            },
-        ];
+    let filter = request.filter.as_ref().unwrap();
 
-        let set2: Vec<TokenKey> = vec![
-            TokenKey {
-                key: "a".to_string(),
-            },
-            TokenKey {
-                key: "c".to_string(),
-            },
-        ];
-
-        let req0 = MessageSubscribeRequest {
-            filter: Some(MessageSubscribeFilter {
-                predicate: Some(message_subscribe_filter::Predicate::Complement(TokenKeys {
-                    keys: set0.clone(),
-                })),
-            }),
-        };
-
-        {
-            let mut pass = true;
-            set0.iter().for_each(|key| {
-                if !message_subscribe_filter(&req0, key) {
-                    pass = false;
+    if let Some(predicate) = &filter.predicate {
+        match predicate {
+            cm::message_subscribe_filter::Predicate::Complement(_) => {
+                for key in keys.iter() {
+                    if !message_subscribe_filter(request, key) {
+                        return false;
+                    }
                 }
-            });
-
-            assert_eq!(pass, false);
-        }
-
-        {
-            let mut pass = true;
-            set1.iter().for_each(|key| {
-                if !message_subscribe_filter(&req0, key) {
-                    pass = false;
+            },
+            cm::message_subscribe_filter::Predicate::Intersection(_) => {
+                for key in keys.iter() {
+                    if !message_subscribe_filter(request, key) {
+                        return false;
+                    }
                 }
-            });
-
-            assert_eq!(pass, true);
-        }
-
-        {
-            let mut pass = true;
-            set2.iter().for_each(|key| {
-                if !message_subscribe_filter(&req0, key) {
-                    pass = false;
-                }
-            });
-
-            assert_eq!(pass, false);
+            },
+            cm::message_subscribe_filter::Predicate::Union(_) => {
+                return true;
+            },
         }
     }
 
-    #[test]
-    fn filter_intersection() {
-        let set0: Vec<TokenKey> = vec![
-            TokenKey {
-                key: "a".to_string(),
-            },
-            TokenKey {
-                key: "b".to_string(),
-            },
-        ];
-        let set1: Vec<TokenKey> = vec![
-            TokenKey {
-                key: "c".to_string(),
-            },
-            TokenKey {
-                key: "d".to_string(),
-            },
-        ];
-
-        let set2: Vec<TokenKey> = vec![
-            TokenKey {
-                key: "a".to_string(),
-            },
-            TokenKey {
-                key: "c".to_string(),
-            },
-        ];
-
-        let req0 = MessageSubscribeRequest {
-             filter: Some(MessageSubscribeFilter {
-                predicate: Some(message_subscribe_filter::Predicate::Intersection(TokenKeys {
-                    keys: set0.clone(),
-                })),
-            }),
-         };
-
-        {
-            let mut pass = true;
-            set0.iter().for_each(|key| {
-                if !message_subscribe_filter(&req0, key) {
-                    pass = false;
-                }
-            });
-
-            assert_eq!(pass, true);
-        }
-
-        {
-            let mut pass = true;
-            set1.iter().for_each(|key| {
-                if !message_subscribe_filter(&req0, key) {
-                    pass = false;
-                }
-            });
-
-            assert_eq!(pass, false);
-        }
-
-        {
-            let mut pass = true;
-            set2.iter().for_each(|key| {
-                if !message_subscribe_filter(&req0, key) {
-                    pass = false;
-                }
-            });
-
-            assert_eq!(pass, false);
-        }
-    }
+    false
 }
-
 
 #[async_trait]
 impl CmMessage for CmMessageService {
@@ -277,31 +158,19 @@ impl CmMessage for CmMessageService {
         tokio::spawn(async move {
             while let Ok(update) = subscribe_rx.recv().await {
                 // Match the defined operation and handle the set logic.
-                if let Some(operation) = &update.operation {
+                if let Some(operation) = update.clone().operation {
                     match operation {
                         Operation::Send(message) => {
-                            if let Some(codomain) = &message.codomain {
+                            if let Some(codomain) = message.codomain {
                                 // Determine whether or not the the processed update is in the domain of the subscriber.
-                                let mut pass = true;
-
-                                // If any of the keys in codomain is not in the range, negate.
-                                for token in codomain.keys.iter() {
-                                    if !message_subscribe_filter(&req, token) {
-                                        pass = false;
-                                        debug!(tok = ?&token, "not in codomain");
-                                    }
-                                }
-
-                                if pass {
-                                    // The update is in domain. Send it to the master process for the RPC stream.
+                                if messages_subscribe_filter(&req, codomain.keys) {
                                     match tx.send(Ok(update)).await {
-                                        Ok(_) => {}
+                                        Ok(_) => {},
                                         Err(_) => {
-                                            // Channel is somehow broken. Prevent exhaustion and break the loop.
                                             info!("channel closed");
                                             break;
-                                        }
-                                    };
+                                        },
+                                    }
                                 }
                             }
                         }
