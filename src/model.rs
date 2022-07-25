@@ -6,7 +6,7 @@ use prost_types::Timestamp;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct TokenKey {
-    pub key: Arc<String>,
+    pub key: Arc<str>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -40,7 +40,7 @@ impl From<&TokenKey> for cm::TokenKey {
 impl From<cm::TokenKey> for TokenKey {
     fn from(source: cm::TokenKey) -> Self {
         Self {
-            key: Arc::new(source.key),
+            key: Arc::from(source.key),
         }
     }
 }
@@ -94,9 +94,9 @@ impl From<TokenKey> for Token {
 }
 
 impl TokenKey {
-    pub fn new(key: impl Into<String>) -> Self {
+    pub fn new(key: &str) -> Self {
         Self {
-            key: Arc::new(key.into()),
+            key: Arc::from(key),
         }
     }
 }
