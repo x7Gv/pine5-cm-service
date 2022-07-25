@@ -157,6 +157,9 @@ impl CmMessage for CmMessageService {
         let mut subscribe_rx = self.subscribe_tx.subscribe();
         tokio::spawn(async move {
             while let Ok(update) = subscribe_rx.recv().await {
+
+                info!("message recv");
+
                 // Match the defined operation and handle the set logic.
                 if let Some(operation) = update.clone().operation {
                     match operation {
