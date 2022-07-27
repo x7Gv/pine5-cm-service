@@ -75,7 +75,6 @@ fn token_subscribe_filter(request: &TokenSubscribeRequest, key: &TokenKey) -> bo
     false
 }
 
-
 #[async_trait]
 impl<Db: TokenDb> CmToken for CmTokenService<Db> {
     // TODO: Token validation

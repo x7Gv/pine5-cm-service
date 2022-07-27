@@ -7,14 +7,14 @@ use tracing::{debug, info, trace};
 
 #[async_trait]
 pub trait TokenDb: Send + Sync + 'static {
-    async fn insert(&self, token: model::TokenKey) -> Result<model::Token, TokenDbError>;
-    async fn update(&self, token: model::TokenKey) -> Result<model::TokenUpdate, TokenDbError>;
-    async fn invalidate(&self, token: model::TokenKey) -> Result<(), TokenDbError>;
+    async fn insert(&self, token: model::token::TokenKey) -> Result<model::token::Token, TokenDbError>;
+    async fn update(&self, token: model::token::TokenKey) -> Result<model::token::TokenUpdate, TokenDbError>;
+    async fn invalidate(&self, token: model::token::TokenKey) -> Result<(), TokenDbError>;
 }
 
 #[derive(Debug)]
 pub struct TokenDbInMemory {
-    db: Arc<Mutex<HashMap<model::TokenKey, model::Token>>>,
+    db: Arc<Mutex<HashMap<model::token::TokenKey, model::token::Token>>>,
 }
 
 impl TokenDbInMemory {
@@ -33,15 +33,15 @@ impl Default for TokenDbInMemory {
 
 #[derive(Debug, Clone)]
 pub enum TokenDbError {
-    TokenNotPresent(model::TokenKey),
+    TokenNotPresent(model::token::TokenKey),
     Unknown,
 }
 
 #[async_trait]
 impl TokenDb for TokenDbInMemory {
     #[tracing::instrument]
-    async fn insert(&self, token: model::TokenKey) -> Result<model::Token, TokenDbError> {
-        let t = model::Token::from(token.clone());
+    async fn insert(&self, token: model::token::TokenKey) -> Result<model::token::Token, TokenDbError> {
+        let t = model::token::Token::from(token.clone());
 
         {
             debug!("preparing to lock database");
@@ -57,8 +57,8 @@ impl TokenDb for TokenDbInMemory {
     }
 
     #[tracing::instrument]
-    async fn update(&self, token: model::TokenKey) -> Result<model::TokenUpdate, TokenDbError> {
-        let mut original: Option<model::Token> = None;
+    async fn update(&self, token: model::token::TokenKey) -> Result<model::token::TokenUpdate, TokenDbError> {
+        let mut original: Option<model::token::Token> = None;
 
         {
             debug!("preparing to lock database");
@@ -84,13 +84,13 @@ impl TokenDb for TokenDbInMemory {
         debug!("database locked");
 
         if locked.contains_key(&token) {
-            let delta = model::Token::from(token.clone());
+            let delta = model::token::Token::from(token.clone());
             locked.insert(token.clone(), delta.clone());
             info!("updating to database");
 
             match original {
                 Some(tok) => {
-                    return Ok(model::TokenUpdate {
+                    return Ok(model::token::TokenUpdate {
                         original: tok,
                         delta,
                     })
@@ -103,7 +103,7 @@ impl TokenDb for TokenDbInMemory {
     }
 
     #[tracing::instrument]
-    async fn invalidate(&self, token: model::TokenKey) -> Result<(), TokenDbError> {
+    async fn invalidate(&self, token: model::token::TokenKey) -> Result<(), TokenDbError> {
         debug!("preparing to lock database");
         let mut locked = self.db.lock().await;
         debug!("database locked");

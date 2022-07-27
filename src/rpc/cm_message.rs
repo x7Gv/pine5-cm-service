@@ -1,3 +1,8 @@
+use std::sync::Arc;
+
+use crate::model::message::Message;
+use crate::model::token::TokenKey;
+
 use super::cm;
 use super::cm::MessageBroadcast;
 use super::cm::MessageSubscribeRequest;
@@ -17,35 +22,31 @@ use super::cm::HealthCheckRequest;
 use super::cm::HealthCheckResponse;
 use super::cm::MessageSendRequest;
 use super::cm::MessageSendResponse;
-use super::cm::TokenKey;
 
 #[derive(Debug)]
 pub struct CmMessageService {
+    fcm: Arc<crate::fcm::FCMService>,
     subscribe_tx: broadcast::Sender<MessageBroadcast>,
     subscribe_rx: broadcast::Receiver<MessageBroadcast>,
 }
 
 impl CmMessageService {
     pub fn new(
+        fcm: Arc<crate::fcm::FCMService>,
         ch: (
             broadcast::Sender<MessageBroadcast>,
             broadcast::Receiver<MessageBroadcast>,
         ),
     ) -> Self {
         Self {
+            fcm,
             subscribe_tx: ch.0,
             subscribe_rx: ch.1,
         }
     }
 }
 
-impl Default for CmMessageService {
-    fn default() -> Self {
-        CmMessageService::new(broadcast::channel(16))
-    }
-}
-
-fn message_subscribe_filter(request: &MessageSubscribeRequest, key: &TokenKey) -> bool {
+fn message_subscribe_filter(request: &MessageSubscribeRequest, key: &cm::TokenKey) -> bool {
     if let Some(filter) = request.filter.as_ref() {
         if let Some(predicate) = &filter.predicate {
             match predicate {
@@ -65,8 +66,7 @@ fn message_subscribe_filter(request: &MessageSubscribeRequest, key: &TokenKey) -
     false
 }
 
-fn messages_subscribe_filter(request: &MessageSubscribeRequest, keys: Vec<TokenKey>) -> bool {
-
+fn messages_subscribe_filter(request: &MessageSubscribeRequest, keys: Vec<cm::TokenKey>) -> bool {
     if request.filter.as_ref().is_none() {
         return false;
     }
@@ -81,19 +81,19 @@ fn messages_subscribe_filter(request: &MessageSubscribeRequest, keys: Vec<TokenK
                         return false;
                     }
                 }
-                return true
-            },
+                return true;
+            }
             cm::message_subscribe_filter::Predicate::Intersection(_) => {
                 for key in keys.iter() {
                     if !message_subscribe_filter(request, key) {
                         return false;
                     }
                 }
-                return true
-            },
+                return true;
+            }
             cm::message_subscribe_filter::Predicate::Union(_) => {
                 return true;
-            },
+            }
         }
     }
 
@@ -137,6 +137,11 @@ impl CmMessage for CmMessageService {
             &message
         );
 
+        let fcm_message: Message = message.clone().into();
+        let tokens: Vec<TokenKey> = message.clone().codomain.unwrap().into();
+
+        self.fcm.send(&fcm_message, tokens).await.unwrap();
+
         // Ok, all things executed successfully. Send the response to finalize.
         Ok(Response::new(MessageSendResponse {
             sent: Some(message.clone()),
@@ -159,12 +164,10 @@ impl CmMessage for CmMessageService {
         let mut subscribe_rx = self.subscribe_tx.subscribe();
         tokio::spawn(async move {
             while let Ok(update) = subscribe_rx.recv().await {
-
                 info!("message recv");
 
                 // Match the defined operation and handle the set logic.
                 if let Some(operation) = update.clone().operation {
-
                     info!("{:?}", operation);
 
                     match operation {
@@ -174,11 +177,11 @@ impl CmMessage for CmMessageService {
                                 println!("{:?}", codomain.keys);
                                 if messages_subscribe_filter(&req, codomain.keys) {
                                     match tx.send(Ok(update)).await {
-                                        Ok(_) => {},
+                                        Ok(_) => {}
                                         Err(_) => {
                                             info!("channel closed");
                                             break;
-                                        },
+                                        }
                                     }
                                 }
                             }

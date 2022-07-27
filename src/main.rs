@@ -1,4 +1,5 @@
 pub mod database;
+pub mod fcm;
 pub mod model;
 pub mod rpc;
 
@@ -10,8 +11,9 @@ use tonic::transport::Server;
 use rpc::cm;
 use rpc::cm_message::CmMessageService;
 use tracing::{info, Instrument, Level};
+use std::sync::Arc;
 
-use crate::rpc::cm_token::CmTokenService;
+use crate::{rpc::cm_token::CmTokenService, fcm::FCMService};
 
 fn setup_log() {
     if cfg!(debug_assertions) {
@@ -29,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = "[::1]:10000".parse().unwrap();
 
-    let message = CmMessageService::default();
+    let message = CmMessageService::new(Arc::new(FCMService::new("abc")), tokio::sync::broadcast::channel(16));
     let token = CmTokenService::default();
 
     let message_svc = CmMessageServer::new(message);
