@@ -65,7 +65,7 @@ fn message_subscribe_filter(request: &MessageSubscribeRequest, key: &TokenKey) -
     false
 }
 
-fn messages_subscribe_filter<'a, 'b>(request: &'a MessageSubscribeRequest, keys: Vec<TokenKey>) -> bool {
+fn messages_subscribe_filter(request: &MessageSubscribeRequest, keys: Vec<TokenKey>) -> bool {
 
     if request.filter.as_ref().is_none() {
         return false;
@@ -81,6 +81,7 @@ fn messages_subscribe_filter<'a, 'b>(request: &'a MessageSubscribeRequest, keys:
                         return false;
                     }
                 }
+                return true
             },
             cm::message_subscribe_filter::Predicate::Intersection(_) => {
                 for key in keys.iter() {
@@ -88,6 +89,7 @@ fn messages_subscribe_filter<'a, 'b>(request: &'a MessageSubscribeRequest, keys:
                         return false;
                     }
                 }
+                return true
             },
             cm::message_subscribe_filter::Predicate::Union(_) => {
                 return true;
@@ -162,10 +164,14 @@ impl CmMessage for CmMessageService {
 
                 // Match the defined operation and handle the set logic.
                 if let Some(operation) = update.clone().operation {
+
+                    info!("{:?}", operation);
+
                     match operation {
                         Operation::Send(message) => {
                             if let Some(codomain) = message.codomain {
                                 // Determine whether or not the the processed update is in the domain of the subscriber.
+                                println!("{:?}", codomain.keys);
                                 if messages_subscribe_filter(&req, codomain.keys) {
                                     match tx.send(Ok(update)).await {
                                         Ok(_) => {},
