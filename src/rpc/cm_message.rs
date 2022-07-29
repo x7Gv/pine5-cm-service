@@ -1,6 +1,6 @@
 use super::cm;
-use super::cm::MessageBroadcast;
-use super::cm::MessageSubscribeRequest;
+use super::cm::NotificationBroadcast;
+use super::cm::NotificationSubscribeRequest;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -12,24 +12,24 @@ use tracing::debug;
 use tracing::info;
 
 use super::cm::cm_message_server::CmMessage;
-use super::cm::message_broadcast::Operation;
+use super::cm::notification_broadcast::Operation;
 use super::cm::HealthCheckRequest;
 use super::cm::HealthCheckResponse;
-use super::cm::MessageSendRequest;
-use super::cm::MessageSendResponse;
+use super::cm::NotificationSendRequest;
+use super::cm::NotificationSendResponse;
 use super::cm::TokenKey;
 
 #[derive(Debug)]
 pub struct CmMessageService {
-    subscribe_tx: broadcast::Sender<MessageBroadcast>,
-    subscribe_rx: broadcast::Receiver<MessageBroadcast>,
+    subscribe_tx: broadcast::Sender<NotificationBroadcast>,
+    subscribe_rx: broadcast::Receiver<NotificationBroadcast>,
 }
 
 impl CmMessageService {
     pub fn new(
         ch: (
-            broadcast::Sender<MessageBroadcast>,
-            broadcast::Receiver<MessageBroadcast>,
+            broadcast::Sender<NotificationBroadcast>,
+            broadcast::Receiver<NotificationBroadcast>,
         ),
     ) -> Self {
         Self {
@@ -45,17 +45,17 @@ impl Default for CmMessageService {
     }
 }
 
-fn message_subscribe_filter(request: &MessageSubscribeRequest, key: &TokenKey) -> bool {
+fn notification_subscribe_filter(request: &NotificationSubscribeRequest, key: &TokenKey) -> bool {
     if let Some(filter) = request.filter.as_ref() {
         if let Some(predicate) = &filter.predicate {
             match predicate {
-                cm::message_subscribe_filter::Predicate::Complement(complement) => {
+                cm::notification_subscribe_filter::Predicate::Complement(complement) => {
                     return !complement.keys.contains(key)
                 }
-                cm::message_subscribe_filter::Predicate::Intersection(intersection) => {
+                cm::notification_subscribe_filter::Predicate::Intersection(intersection) => {
                     return intersection.keys.contains(key);
                 }
-                cm::message_subscribe_filter::Predicate::Union(_) => {
+                cm::notification_subscribe_filter::Predicate::Union(_) => {
                     return true;
                 }
             }
@@ -65,7 +65,7 @@ fn message_subscribe_filter(request: &MessageSubscribeRequest, key: &TokenKey) -
     false
 }
 
-fn messages_subscribe_filter(request: &MessageSubscribeRequest, keys: Vec<TokenKey>) -> bool {
+fn notifications_subscribe_filter(request: &NotificationSubscribeRequest, keys: Vec<TokenKey>) -> bool {
 
     if request.filter.as_ref().is_none() {
         return false;
@@ -75,23 +75,23 @@ fn messages_subscribe_filter(request: &MessageSubscribeRequest, keys: Vec<TokenK
 
     if let Some(predicate) = &filter.predicate {
         match predicate {
-            cm::message_subscribe_filter::Predicate::Complement(_) => {
+            cm::notification_subscribe_filter::Predicate::Complement(_) => {
                 for key in keys.iter() {
-                    if !message_subscribe_filter(request, key) {
+                    if !notification_subscribe_filter(request, key) {
                         return false;
                     }
                 }
                 return true
             },
-            cm::message_subscribe_filter::Predicate::Intersection(_) => {
+            cm::notification_subscribe_filter::Predicate::Intersection(_) => {
                 for key in keys.iter() {
-                    if !message_subscribe_filter(request, key) {
+                    if !notification_subscribe_filter(request, key) {
                         return false;
                     }
                 }
                 return true
             },
-            cm::message_subscribe_filter::Predicate::Union(_) => {
+            cm::notification_subscribe_filter::Predicate::Union(_) => {
                 return true;
             },
         }
@@ -102,23 +102,23 @@ fn messages_subscribe_filter(request: &MessageSubscribeRequest, keys: Vec<TokenK
 
 #[async_trait]
 impl CmMessage for CmMessageService {
-    async fn message_send(
+    async fn notification_send(
         &self,
-        request: Request<MessageSendRequest>,
-    ) -> Result<Response<MessageSendResponse>, Status> {
-        // Assert that there is an inner message present in the request.
-        let message = match &request.get_ref().inner {
-            Some(message) => message,
+        request: Request<NotificationSendRequest>,
+    ) -> Result<Response<NotificationSendResponse>, Status> {
+        // Assert that there is an inner notification present in the request.
+        let notification = match &request.get_ref().inner {
+            Some(notification) => notification,
             None => {
-                let status = Status::invalid_argument("inner message not present");
+                let status = Status::invalid_argument("inner notification not present");
                 info!(status = ?&status, "request failed");
                 return Err(status);
             }
         };
 
-        // Message is present. Now construct a broadcastable object and send it to the subscribers.
-        let bcast = MessageBroadcast {
-            operation: Some(Operation::Send(message.clone())),
+        // Notification is present. Now construct a broadcastable object and send it to the subscribers.
+        let bcast = NotificationBroadcast {
+            operation: Some(Operation::Send(notification.clone())),
         };
 
         // Send through the broadcast channel.
@@ -132,23 +132,23 @@ impl CmMessage for CmMessageService {
         };
 
         info!(
-            "\nrpc#MessageSend :: ({:?}) \n\n{:?}\n",
+            "\nrpc#NotificationSend :: ({:?}) \n\n{:?}\n",
             &request.get_ref(),
-            &message
+            &notification
         );
 
         // Ok, all things executed successfully. Send the response to finalize.
-        Ok(Response::new(MessageSendResponse {
-            sent: Some(message.clone()),
+        Ok(Response::new(NotificationSendResponse {
+            sent: Some(notification.clone()),
         }))
     }
 
-    type MessageSubscribeStream = ReceiverStream<Result<MessageBroadcast, Status>>;
+    type NotificationSubscribeStream = ReceiverStream<Result<NotificationBroadcast, Status>>;
 
-    async fn message_subscribe(
+    async fn notification_subscribe(
         &self,
-        request: Request<MessageSubscribeRequest>,
-    ) -> Result<Response<Self::MessageSubscribeStream>, Status> {
+        request: Request<NotificationSubscribeRequest>,
+    ) -> Result<Response<Self::NotificationSubscribeStream>, Status> {
         // Spend up an internal mpsc channel for in process streaming.
         let (tx, rx) = mpsc::channel(4);
 
@@ -160,7 +160,7 @@ impl CmMessage for CmMessageService {
         tokio::spawn(async move {
             while let Ok(update) = subscribe_rx.recv().await {
 
-                info!("message recv");
+                info!("notification recv");
 
                 // Match the defined operation and handle the set logic.
                 if let Some(operation) = update.clone().operation {
@@ -168,11 +168,11 @@ impl CmMessage for CmMessageService {
                     info!("{:?}", operation);
 
                     match operation {
-                        Operation::Send(message) => {
-                            if let Some(codomain) = message.codomain {
+                        Operation::Send(notification) => {
+                            if let Some(codomain) = notification.codomain {
                                 // Determine whether or not the the processed update is in the domain of the subscriber.
                                 println!("{:?}", codomain.keys);
-                                if messages_subscribe_filter(&req, codomain.keys) {
+                                if notifications_subscribe_filter(&req, codomain.keys) {
                                     match tx.send(Ok(update)).await {
                                         Ok(_) => {},
                                         Err(_) => {
@@ -188,7 +188,7 @@ impl CmMessage for CmMessageService {
             }
         });
 
-        info!("\nrpc#MessageSubscribe :: ({:?})", &req2);
+        info!("\nrpc#NotificationSubscribe :: ({:?})", &req2);
 
         // Subscribed successfully, begin streaming.
         Ok(Response::new(ReceiverStream::new(rx)))

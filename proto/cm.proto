@@ -7,8 +7,8 @@ import "google/protobuf/timestamp.proto";
 
 service cm_message {
 
-    rpc MessageSend(MessageSendRequest) returns (MessageSendResponse);
-    rpc MessageSubscribe(MessageSubscribeRequest) returns (stream MessageBroadcast);
+    rpc NotificationSend(NotificationSendRequest) returns (NotificationSendResponse);
+    rpc NotificationSubscribe(NotificationSubscribeRequest) returns (stream NotificationBroadcast);
 
     rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
     rpc Watch(HealthCheckRequest) returns (stream HealthCheckResponse);
@@ -84,21 +84,21 @@ message Tokens {
     repeated Token tokens = 1;
 }
 
-message MessageBroadcast {
+message NotificationBroadcast {
     oneof operation {
-        Message send = 1;
+        Notification send = 1;
     }
 }
 
-message MessageSendResponse {
-    Message sent = 1;
+message NotificationSendResponse {
+    Notification sent = 1;
 }
 
-message MessageSubscribeRequest {
-    MessageSubscribeFilter filter = 1;
+message NotificationSubscribeRequest {
+    NotificationSubscribeFilter filter = 1;
 }
 
-message MessageSubscribeFilter {
+message NotificationSubscribeFilter {
     oneof predicate {
         TokenKeys complement = 1;
         TokenKeys intersection = 2;
@@ -106,14 +106,25 @@ message MessageSubscribeFilter {
     }
 }
 
-message MessageSendRequest {
-    Message inner = 1;
+message NotificationSendRequest {
+    Notification inner = 1;
 }
 
-message Message {
-    map<string, string> content = 1;
-    TokenKeys codomain = 2;
-    google.protobuf.Timestamp timestamp = 3;
+message Notification {
+    string title = 1;
+    string body = 2;
+    string icon = 3;
+    string sound = 4;
+    string badge = 5;
+    string tag = 6;
+    string color = 7;
+    string click_action = 8;
+    string body_loc_key = 9;
+    string body_loc_args = 10;
+    string title_loc_key = 11;
+    string title_loc_args = 12;
+    TokenKeys codomain = 13;
+    google.protobuf.Timestamp timestamp = 14;
 }
 
 message HealthCheckRequest {
